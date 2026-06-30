@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SSCC QR-Code Generator</title>
+  <link rel="icon" href="favicon.png" type="image/png">  
+
+
+<style>
+body{
+  font-family:Arial, sans-serif;
+  margin:0;
+  background:#ffffff;
+  color:#000;
+  display:flex;
+  justify-content:center;
+  align-items:center;
+  min-height:100vh;
+}
+body.night{background:#121212;color:#fff;}
+
+.wrapper{
+  display:flex;
+  gap:20px;
+  padding:20px;
+  border-radius:12px;
+  background:#f8f8f8;
+  box-shadow:0 3px 15px rgba(0,0,0,.2);
+}
+body.night .wrapper{background:#1e1e1e;}
+
+.controls{
+  width:320px;
+  display:flex;
+  flex-direction:column;
+  gap:10px;
+}
+
+.input-row{
+  display:flex;
+  gap:8px;
+}
+.input-row input{
+  flex:1;
+  padding:10px;
+  font-size:1rem;
+}
+.input-row button{
+  background:#ff0000;
+  color:#fff;
+  border:none;
+  border-radius:6px;
+  cursor:pointer;
+  padding:10px;
+}
+
+.qty-row{
+  display:flex;
+  gap:6px;
+  flex-wrap:wrap;
+}
+
+button{
+  padding:8px 12px;
+  border:none;
+  border-radius:6px;
+  background:#ff8800;
+  color:#fff;
+  cursor:pointer;
+  position:relative;
+  overflow:hidden;
+}
+button.selected{background:#cc6600;}
+button:hover{opacity:.9;}
+
+body.night button{background:#0b5cff;}
+body.night button.selected{background:#003bb3;}
+
+button::after{
+  content:''; 
+  position:absolute;
+  inset:0;
+  background:rgba(255,255,255,.3);
+  opacity:0;
+}
+button:active::after{opacity:1;}
+
+.preview{
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+}
+
+#qr{
+  width:180px;
+  height:180px;
+  border:1px solid #ccc;
+  display:flex;
+  justify-content:center;
+  align-items:center;
+  background:#fff;
+}
+
+#last4{
+  font-size:22pt;
+  font-weight:bold;
+  margin-top:8px;
+}
+#counter{
+  font-size:20pt;
+}
+
+.history-title{
+  margin-top:10px;
+  font-weight:bold;
+}
+.history{
+  max-height:150px;
+  overflow:auto;
+  font-size:.9rem;
+}
+.history div{
+  padding:4px 0;
+  cursor:pointer;
+  border-bottom:1px solid #ccc;
+}
+
+footer{
+  position:fixed;
+  bottom:10px;
+  right:15px;
+  font-size:.9rem;
+  cursor:pointer;
+}
+</style>
+</head>
+
+<body>
+
+<div class="wrapper">
+  <div class="controls">
+    <label><b>SSCC Nummer</b></label>
+
+    <div class="input-row">
+      <input id="sscc" placeholder="SSCC scannen oder eingeben">
+      <button id="clear">✖</button>
+    </div>
+
+    <div class="qty-row">
+      <button class="qty" data-q="1">1</button>
+      <button class="qty" data-q="5">5</button>
+      <button class="qty" data-q="10">10</button>
+      <button class="qty" data-q="20">20</button>
+    </div>
+
+    <button id="print">Drucken</button>
+    <button id="download">Download PNG</button>
+
+    <div class="history-title">Letzte SSCC</div>
+    <div class="history" id="history"></div>
+  </div>
+
+  <div class="preview">
+    <div id="qr">QR</div>
+    <div id="last4">----</div>
+    <div id="counter"></div>
+  </div>
+</div>
+
+<footer>
+  Made with ❤️ by Shkodran &nbsp;|&nbsp; 🌓 Dunkelmodus
+</footer>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script>
+const ssccInput=document.getElementById('sscc');
+const qrBox=document.getElementById('qr');
+const last4=document.getElementById('last4');
+const counter=document.getElementById('counter');
+const historyBox=document.getElementById('history');
+const qtyBtns=document.querySelectorAll('.qty');
+
+let qrObj=null;
+let qty=1;
+
+/* ===== MEMORIA PERSISTENTE ===== */
+localStorage.removeItem('ssccMemory'); // RESET ad ogni apertura
+const memory=JSON.parse(localStorage.getItem('ssccMemory')||'{}');
+saveMemory();
+
+function saveMemory(){
+  localStorage.setItem('ssccMemory',JSON.stringify(memory));
+  renderHistory();
+}
+
+/* ===== DARK MODE ===== */
+document.querySelector('footer').onclick=()=>{
+  document.body.classList.toggle('night');
+};
+
+/* ===== QR ===== */
+function generateQR(v){
+  qrBox.innerHTML='';
+  counter.textContent='';
+  if(!v) return;
+  qrObj=new QRCode(qrBox,{text:v,width:160,height:160});
+  last4.textContent=v.slice(-4);
+}
+
+/* ===== HISTORY ===== */
+function renderHistory(){
+  historyBox.innerHTML='';
+Object.keys(memory).slice(-6).forEach(k=>{
+    const d=document.createElement('div');
+    d.textContent=`${k} (${memory[k].count}) - ${memory[k].lastPrinted}`;
+    d.onclick=()=>{
+      ssccInput.value=k;
+      generateQR(k);
+    };
+    historyBox.appendChild(d);
+  });
+}
+
+/* ===== QUANTITÀ ===== */
+qtyBtns.forEach(b=>{
+  b.onclick=()=>{
+    qtyBtns.forEach(x=>x.classList.remove('selected'));
+    b.classList.add('selected');
+    qty=+b.dataset.q;
+    printLabels();
+  };
+});
+
+/* ===== STAMPA ===== */
+function printLabels(){
+  if(!qrObj) return;
+  const sscc=ssccInput.value.trim();
+  if(!sscc) return;
+
+  const start=memory[sscc]?.count || 0;
+  const img=qrBox.querySelector('img').src;
+
+  let html='';
+  for(let i=1;i<=qty;i++){
+    html+=`
+      <div class="label">
+        <img src="${img}">
+        <div class="txt">
+          <div class="code">${last4.textContent}</div>
+          <div class="cnt">${start+i}/${start+qty}</div>
+        </div>
+      </div>
+    `;
+  }
+
+  const w=window.open('');
+  w.document.write(`
+    <html><head><style>
+      @page{size:50mm 30mm;margin:0;}
+      body{margin:0;font-family:Arial;}
+      .label{
+        width:50mm;height:30mm;
+        display:flex;
+        align-items:center;
+        page-break-after:always;
+      }
+      img{width:24mm;height:24mm;}
+      .txt{margin-left:3mm;}
+      .code{font-size:16pt;font-weight:bold;}
+      .cnt{font-size:14pt;}
+    </style></head><body>${html}</body></html>
+  `);
+  w.print();
+  w.close();
+
+  // SALVATAGGIO MEMORIA CON ORARIO
+  const now=new Date();
+  const timeString=now.toLocaleString(); // es: "18.12.2025, 14:30:15"
+  memory[sscc]={
+    count:start+qty,
+    lastPrinted:timeString
+  };
+  saveMemory();
+}
+
+/* ===== EVENTI ===== */
+ssccInput.oninput=()=>generateQR(ssccInput.value.trim());
+
+ssccInput.onkeydown=e=>{
+  if(e.key==='Enter'){
+    qty=1;
+    printLabels();
+  }
+};
+
+document.getElementById('print').onclick=printLabels;
+
+document.getElementById('download').onclick=()=>{
+  if(!qrObj) return;
+  const img=qrBox.querySelector('img');
+  const a=document.createElement('a');
+  a.href=img.src;
+  a.download='SSCC_'+ssccInput.value+'.png';
+  a.click();
+};
+
+document.getElementById('clear').onclick=()=>{
+  ssccInput.value='';
+  qrBox.innerHTML='QR';
+  last4.textContent='----';
+  counter.textContent='';
+};
+</script>
+
+</body>
+</html>
